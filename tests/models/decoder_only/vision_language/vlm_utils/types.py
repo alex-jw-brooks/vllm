@@ -61,6 +61,8 @@ class ImageSizeWrapper(NamedTuple):
 
 
 class VLMTestInfo(NamedTuple):
+    """Holds the configuration for 1+ tests for one model architecture."""
+
     models: Union[List[str]]
     test_type: Union[VLMTestType, Iterable[VLMTestType]]
 
@@ -165,3 +167,18 @@ class VLMTestInfo(NamedTuple):
             "patch_hf_runner": self.patch_hf_runner,
             "runner_mm_key": self.runner_mm_key,
         }
+
+
+class ExpandableVLMTestArgs(NamedTuple):
+    """The expanded kwargs which correspond to a single test case."""
+    model: str
+    max_tokens: int
+    num_logprobs: int
+    dtype: str
+    distributed_executor_backend: Optional[str]
+    # Sizes are used for everything except for custom input tests
+    size_wrapper: Optional[ImageSizeWrapper] = None
+    # Video only
+    num_video_frames: Optional[int] = None
+    # Custom inputs only
+    custom_test_opts: Optional[CustomTestOptions] = None

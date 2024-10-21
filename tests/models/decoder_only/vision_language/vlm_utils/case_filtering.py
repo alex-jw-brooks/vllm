@@ -2,13 +2,14 @@
 modality, getting all combinations (similar to pytest's parametrization),
 handling multimodal placeholder substitution, and so on.
 """
+from collections import OrderedDict
 import itertools
 from typing import Dict, Iterable, List, Tuple
 
 import pytest
 
-from .types import (EMBEDDING_SIZE_FACTORS, ImageSizeWrapper, SizeType,
-                    VLMTestInfo, VLMTestType)
+from .types import (EMBEDDING_SIZE_FACTORS, ExpandableVLMTestArgs,
+                    ImageSizeWrapper, SizeType, VLMTestInfo, VLMTestType)
 
 
 def get_filtered_test_settings(
@@ -71,38 +72,47 @@ def get_parametrized_options(test_settings: Dict[str, VLMTestInfo],
         # decorators, but we do it programmatically to allow overrides for on
         # a per-model basis, while still being able to execute each of these
         # as individual test cases in pytest.
-        iterables = [
-            ensure_wrapped(model_type),
-            ensure_wrapped(test_info.models),
-            ensure_wrapped(test_info.max_tokens),
-            ensure_wrapped(test_info.num_logprobs),
-            ensure_wrapped(test_info.dtype),
-            ensure_wrapped(test_info.distributed_executor_backend),
-        ]
+        iter_kwargs = OrderedDict([
+            ("model", ensure_wrapped(test_info.models)),
+            ("max_tokens", ensure_wrapped(test_info.max_tokens)),
+            ("num_logprobs", ensure_wrapped(test_info.num_logprobs)),
+            ("dtype", ensure_wrapped(test_info.dtype)),
+            ("distributed_executor_backend",
+             ensure_wrapped(test_info.distributed_executor_backend)),
+        ])
+
         # num_frames is video only
         if test_type == VLMTestType.VIDEO:
-            iterables.append(ensure_wrapped(test_info.num_video_frames))
+            iter_kwargs["num_video_frames"] = ensure_wrapped(
+                test_info.num_video_frames)
 
         # No sizes passed for custom inputs, since inputs are directly provided
         if test_type != VLMTestType.CUSTOM_INPUTS:
-            iterables.append(get_wrapped_test_sizes(test_info, test_type))
+            wrapped_sizes = get_wrapped_test_sizes(test_info, test_type)
+            if wrapped_sizes is None:
+                raise ValueError(
+                    f"Sizes must be set for test type {test_type}")
+            iter_kwargs["size_wrapper"] = wrapped_sizes
+
         #Otherwise expand the custom test options instead
         else:
             if test_info.custom_test_opts is None:
                 raise ValueError("Test has type CUSTOM_INPUTS, but none given")
-
-            iterables.append(test_info.custom_test_opts)
+            iter_kwargs["custom_test_opts"] = test_info.custom_test_opts
 
         # Wrap all model cases in a pytest parameter & explicitly skip anything
         # that had a met skip condition, but otherwise matched the filter.
         return [
             pytest.param(
-                *case,
+                model_type,
+                ExpandableVLMTestArgs(
+                    **{k: v
+                       for k, v in zip(iter_kwargs.keys(), case)}),
                 marks=pytest.mark.skipif(
                     model_type in skipped_names,
                     reason=
                     f"Skip condition for model type {model_type} is met"  # noqa: E501
-                )) for case in list(itertools.product(*iterables))
+                )) for case in list(itertools.product(*iter_kwargs.values()))
         ]
 
     # Get a list per model type, where each entry contains a tuple of all of
