@@ -6,6 +6,7 @@ from typing import (Any, Callable, Dict, Iterable, List, NamedTuple, Optional,
 
 import torch
 from PIL.Image import Image
+from pytest import MarkDecorator
 from transformers import AutoModelForCausalLM, AutoTokenizer, BatchEncoding
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
@@ -143,8 +144,7 @@ class VLMTestInfo(NamedTuple):
     # Allows configuring a test to run with custom inputs
     custom_test_opts: Optional[List[CustomTestOptions]] = None
 
-    # Toggle for disabling instances of this class
-    skip: bool = False
+    marks: Optional[List[MarkDecorator]] = None
 
     def get_non_parametrized_runner_kwargs(self):
         """Returns a dictionary of expandable kwargs for items that are used

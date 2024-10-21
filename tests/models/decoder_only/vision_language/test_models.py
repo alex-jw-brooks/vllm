@@ -12,7 +12,7 @@ from vllm.utils import cuda_device_count_stateless, identity, is_cpu, is_hip
 
 from ....conftest import (IMAGE_ASSETS, HfRunner, VllmRunner, _ImageAssets,
                           _VideoAssets)
-from ....utils import fork_new_process_for_each_test, get_memory_gb
+from ....utils import fork_new_process_for_each_test, large_gpu_mark
 from ...utils import check_outputs_equal
 from .vlm_utils import custom_inputs, model_utils, runners
 from .vlm_utils.case_filtering import get_parametrized_options
@@ -26,6 +26,7 @@ from .vlm_utils.types import (CustomTestOptions, ExpandableVLMTestArgs,
 if is_hip():
     os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 
+# yapf: disable
 COMMON_BROADCAST_SETTINGS = {
     "test_type": VLMTestType.IMAGE,
     "dtype": "half",
@@ -36,7 +37,13 @@ COMMON_BROADCAST_SETTINGS = {
         "ray",
         "mp",
     ),
-    "skip": cuda_device_count_stateless() < 2,
+    "marks": [
+        pytest.mark.distributed_2_gpus,
+        pytest.mark.skipif(
+            cuda_device_count_stateless() < 2,
+            reason="Need at least 2 GPUs to run the test.",
+        )
+    ]
 }
 
 ### Test configuration for specific models
@@ -72,7 +79,6 @@ COMMON_BROADCAST_SETTINGS = {
 # which cases would be selected and deselected by pytest. In general,
 # this is a good idea for checking your command first, since tests are slow.
 
-# yapf: disable
 VLM_TEST_SETTINGS = {
     "blip2": VLMTestInfo(
         models=["Salesforce/blip2-opt-2.7b"],
@@ -121,7 +127,7 @@ VLM_TEST_SETTINGS = {
         max_num_seqs=2,
         dtype="bfloat16",
         get_stop_token_ids=lambda tok: [151329, 151336, 151338],
-        skip=(get_memory_gb() < 48), # Large GPU test
+        marks=[large_gpu_mark(min_gb=48)],
         patch_hf_runner=model_utils.glm_patch_hf_runner,
     ),
     "intern_vl": VLMTestInfo(
@@ -188,7 +194,7 @@ VLM_TEST_SETTINGS = {
         # Llava-one-vision tests fixed sizes & the default size factors
         image_sizes=[((1669, 2560), (2560, 1669), (183, 488), (488, 183))],
         runner_mm_key="videos",
-        skip=(get_memory_gb() < 48), # Large GPU test
+        marks=[large_gpu_mark(min_gb=48)],
     ),
     "llava_next_video": VLMTestInfo(
         models=["llava-hf/LLaVA-NeXT-Video-7B-hf"],
@@ -263,7 +269,7 @@ VLM_TEST_SETTINGS = {
         vllm_output_post_proc = lambda vllm_output, model: vllm_output[:2],
         hf_output_post_proc = lambda hf_output, model: hf_output[:2],
         comparator=check_outputs_equal,
-        **COMMON_BROADCAST_SETTINGS,
+        **COMMON_BROADCAST_SETTINGS # type: ignore
     ),
     "broadcast-llava": VLMTestInfo(
         models=["llava-hf/llava-1.5-7b-hf"],
@@ -271,7 +277,7 @@ VLM_TEST_SETTINGS = {
         max_model_len=4096,
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.llava_image_vllm_to_hf_output,
-        **COMMON_BROADCAST_SETTINGS,
+        **COMMON_BROADCAST_SETTINGS # type: ignore
     ),
     "broadcast-llava_next": VLMTestInfo(
         models=["llava-hf/llava-v1.6-mistral-7b-hf"],
@@ -279,7 +285,7 @@ VLM_TEST_SETTINGS = {
         max_model_len=10240,
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.llava_image_vllm_to_hf_output,
-        **COMMON_BROADCAST_SETTINGS,
+        **COMMON_BROADCAST_SETTINGS # type: ignore
     ),
     ### Custom input edge-cases for specific models
     "intern_vl-diff-patches": VLMTestInfo(
@@ -315,10 +321,11 @@ VLM_TEST_SETTINGS = {
             ),
             limit_mm_per_prompt={"image": 4},
         )],
-        skip=(get_memory_gb() < 48), # Large GPU test
+        marks=[large_gpu_mark(min_gb=48)],
     ),
 }
 # yapf: enable
+
 
 ### Test wrappers
 # Wrappers around the core test running func for:
@@ -327,8 +334,6 @@ VLM_TEST_SETTINGS = {
 # - image embeddings
 # - video
 # - custom inputs
-
-
 @pytest.mark.parametrize("model_type,test_case",
                          get_parametrized_options(
                              VLM_TEST_SETTINGS,

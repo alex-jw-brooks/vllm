@@ -561,10 +561,11 @@ def fork_new_process_for_each_test(
     return wrapper
 
 
-def get_memory_gb() -> int:
-    """Gets the device memory in gb; can be leveraged via @large_gpu_test
-    to skip tests in environments without enough resources, or called when
-    filtering tests to run directly.
+def large_gpu_mark(min_gb: int) -> pytest.MarkDecorator:
+    """Gets a pytest skipif mark, which triggers ig the the device doesn't have
+    meet a minimum memory requirement in gb; can be leveraged via 
+    @large_gpu_test to skip tests in environments without enough resources, or
+    called when filtering tests to run directly.
     """
     try:
         if current_platform.is_cpu():
@@ -578,7 +579,10 @@ def get_memory_gb() -> int:
         )
         memory_gb = 0
 
-    return memory_gb
+    return pytest.mark.skipif(
+        memory_gb < min_gb,
+        reason=f"Need at least {memory_gb}GB GPU memory to run the test.",
+    )
 
 
 def large_gpu_test(*, min_gb: int):
@@ -588,11 +592,7 @@ def large_gpu_test(*, min_gb: int):
 
     Currently, the CI machine uses L4 GPU which has 24 GB VRAM.
     """
-    memory_gb = get_memory_gb()
-    test_skipif = pytest.mark.skipif(
-        memory_gb < min_gb,
-        reason=f"Need at least {memory_gb}GB GPU memory to run the test.",
-    )
+    test_skipif = large_gpu_mark(min_gb)
 
     def wrapper(f: Callable[_P, None]) -> Callable[_P, None]:
         return test_skipif(fork_new_process_for_each_test(f))
