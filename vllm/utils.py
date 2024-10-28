@@ -994,7 +994,8 @@ def enable_trace_function_call_for_thread() -> None:
 
 
 # `functools` helpers
-def identity(value: T) -> T:
+def identity(value: T, **kwargs) -> T:
+    """Returns the first provided value."""
     return value
 
 
