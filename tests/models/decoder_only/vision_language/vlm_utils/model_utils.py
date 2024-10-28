@@ -186,8 +186,8 @@ def get_key_type_post_processor(
     return process
 
 
-def wrap_inputs_post_processor(hf_inputs: BatchEncoding) -> BatchEncoding:
-    return BatchEncoding({"model_inputs": hf_inputs})
+def wrap_inputs_post_processor(hf_inputs: BatchEncoding):
+    return {"model_inputs": hf_inputs}
 
 
 ####### Prompt path encoders for models that need models on disk
@@ -323,8 +323,16 @@ def _internvl_generate(
 
     input_embeds = input_embeds.reshape(B, N, C)
 
-    return self.language_model.generate(
+    forward_kwargs = dict(
         inputs_embeds=input_embeds,
         attention_mask=attention_mask,
+    )
+    if getattr(self, "use_visual_token_mask", False):
+        visual_token_mask = selected.reshape(B, N, 1).to(input_embeds.dtype)
+        forward_kwargs["visual_token_mask"] = visual_token_mask
+    outputs = self.language_model.generate(
+        **forward_kwargs,
         **generate_kwargs,
     )
+
+    return outputs

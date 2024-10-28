@@ -72,12 +72,12 @@ class VLMTestInfo(NamedTuple):
     img_idx_to_prompt: Callable[[int], str] = lambda idx: "<image>\n"
     video_idx_to_prompt: Callable[[int], str] = lambda idx: "<video>\n"
 
-    # HACK - currently, this is exposed so that we can pass an override for the
-    # prompt to paligemma so that we can match the existing prompt, because the
-    # default prompt fails the logprobs check.
-    # If a different value is passed here, it should be of length 2 so that it
-    # can be zipped up with the same assets.
+    # Most models work on the single / multi-image prompts above, but in some
+    # cases the log prob check fails, e.g., for paligemma. We allow passing
+    # an override for the single image prompts / multi-image prompt for this
+    # reason.
     single_image_prompts: Iterable[str] = SINGLE_IMAGE_BASE_PROMPTS
+    multi_image_prompt: str = MULTI_IMAGE_BASE_PROMPT
 
     # Function for converting ImageAssets to image embeddings;
     # We need to define this explicitly for embedding tests

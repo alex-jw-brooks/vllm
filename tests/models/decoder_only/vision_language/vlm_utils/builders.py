@@ -9,9 +9,9 @@ from vllm.multimodal.utils import (rescale_image_size, rescale_video_size,
                                    resize_video, sample_frames_from_video)
 
 from .....conftest import _ImageAssets, _VideoAssets
-from .types import (MULTI_IMAGE_BASE_PROMPT, SINGLE_IMAGE_BASE_PROMPTS,
-                    TEST_IMG_PLACEHOLDER, TEST_VIDEO_PLACEHOLDER,
-                    VIDEO_BASE_PROMPT, ImageSizeWrapper, SizeType, VLMTestInfo)
+from .types import (SINGLE_IMAGE_BASE_PROMPTS, TEST_IMG_PLACEHOLDER,
+                    TEST_VIDEO_PLACEHOLDER, VIDEO_BASE_PROMPT,
+                    ImageSizeWrapper, SizeType, VLMTestInfo)
 
 
 def replace_test_placeholder(prompt: str, img_idx_to_prompt: Callable[[int],
@@ -120,7 +120,7 @@ def build_multi_image_inputs_from_test_info(
         raise ValueError(
             "Prompt formatter must be set to build multi image inputs")
 
-    model_prompts = get_model_prompts([MULTI_IMAGE_BASE_PROMPT],
+    model_prompts = get_model_prompts([test_info.multi_image_prompt],
                                       test_info.img_idx_to_prompt,
                                       test_info.video_idx_to_prompt,
                                       test_info.prompt_formatter)

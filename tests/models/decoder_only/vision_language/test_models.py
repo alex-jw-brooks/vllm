@@ -6,9 +6,11 @@ from pathlib import PosixPath
 from typing import Type
 
 import pytest
+import transformers
 from transformers import AutoModelForVision2Seq
 
-from vllm.utils import cuda_device_count_stateless, identity, is_cpu, is_hip
+from vllm.platforms import current_platform
+from vllm.utils import cuda_device_count_stateless, identity
 
 from ....conftest import (IMAGE_ASSETS, HfRunner, VllmRunner, _ImageAssets,
                           _VideoAssets)
@@ -23,7 +25,7 @@ from .vlm_utils.types import (CustomTestOptions, ExpandableVLMTestArgs,
 # ROCm Triton FA can run into shared memory issues with these models,
 # use other backends in the meantime
 # FIXME (mattwong, gshtrasb, hongxiayan)
-if is_hip():
+if current_platform.is_rocm():
     os.environ["VLLM_USE_TRITON_FLASH_ATTN"] = "0"
 
 # yapf: disable
@@ -36,14 +38,7 @@ COMMON_BROADCAST_SETTINGS = {
     "distributed_executor_backend": (
         "ray",
         "mp",
-    ),
-    "marks": [
-        pytest.mark.distributed_2_gpus,
-        pytest.mark.skipif(
-            cuda_device_count_stateless() < 2,
-            reason="Need at least 2 GPUs to run the test.",
-        )
-    ]
+    )
 }
 
 ### Test configuration for specific models
@@ -104,6 +99,12 @@ VLM_TEST_SETTINGS = {
         comparator=check_outputs_equal,
         max_tokens=8,
         dtype="bfloat16",
+        marks=[
+            pytest.mark.skipif(
+                transformers.__version__.startswith("4.46.0"),
+                reason="Model broken in HF, see huggingface/transformers#34379"
+            )
+        ]
     ),
     "fuyu": VLMTestInfo(
         models=["adept/fuyu-8b"],
@@ -115,7 +116,7 @@ VLM_TEST_SETTINGS = {
         use_tokenizer_eos=True,
         vllm_output_post_proc=model_utils.fuyu_vllm_to_hf_output,
         num_logprobs=10,
-        dtype="bfloat16" if is_cpu() else "half",
+        dtype="bfloat16" if current_platform.is_cpu() else "half",
         image_size_factors=[(), (0.25,), (0.25, 0.25, 0.25), (0.25, 0.2, 0.15)],
     ),
     "glm4": VLMTestInfo(
@@ -131,15 +132,23 @@ VLM_TEST_SETTINGS = {
         patch_hf_runner=model_utils.glm_patch_hf_runner,
     ),
     "intern_vl": VLMTestInfo(
-        models=["OpenGVLab/InternVL2-1B", "OpenGVLab/InternVL2-2B"],
+        models=[
+            "OpenGVLab/InternVL2-1B",
+            "OpenGVLab/InternVL2-2B",
+            "OpenGVLab/Mono-InternVL-2B",
+        ],
         test_type=(VLMTestType.IMAGE, VLMTestType.MULTI_IMAGE),
         prompt_formatter=lambda img_prompt: f"<|im_start|>User\n{img_prompt}<|im_end|>\n<|im_start|>Assistant\n", # noqa: E501
         single_image_prompts=IMAGE_ASSETS.prompts({
             "stop_sign": "<image>\nWhat's the content in the center of the image?",  # noqa: E501
             "cherry_blossom": "<image>\nWhat is the season?",
         }),
+        multi_image_prompt="Image-1: <image>\nImage-2: <image>\nDescribe the two images in short.",  # noqa: E501
         max_model_len=4096,
-        dtype="bfloat16" if is_cpu() else "half",
+        # NOTE: Mono-InternVL-2B doesn't work with fp16,
+        # it will result NaN during inference.
+        # See: https://huggingface.co/OpenGVLab/Mono-InternVL-2B/discussions/9
+        dtype="bfloat16",
         use_tokenizer_eos=True,
         patch_hf_runner=model_utils.internvl_patch_hf_runner,
     ),
@@ -231,7 +240,7 @@ VLM_TEST_SETTINGS = {
         }),
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.paligemma_vllm_to_hf_output,
-        dtype="half" if is_hip() else ("half", "float"),
+        dtype="half" if current_platform.is_rocm() else ("half", "float"),
     ),
     "phi3v": VLMTestInfo(
         models=["microsoft/Phi-3.5-vision-instruct"],
@@ -269,6 +278,17 @@ VLM_TEST_SETTINGS = {
         vllm_output_post_proc = lambda vllm_output, model: vllm_output[:2],
         hf_output_post_proc = lambda hf_output, model: hf_output[:2],
         comparator=check_outputs_equal,
+        marks=[
+            pytest.mark.distributed_2_gpus,
+            pytest.mark.skipif(
+                cuda_device_count_stateless() < 2,
+                reason="Need at least 2 GPUs to run the test.",
+            ),
+            pytest.mark.skipif(
+                transformers.__version__.startswith("4.46.0"),
+                reason="Model broken in HF, see huggingface/transformers#34379"
+            )
+        ],
         **COMMON_BROADCAST_SETTINGS # type: ignore
     ),
     "broadcast-llava": VLMTestInfo(
@@ -277,6 +297,13 @@ VLM_TEST_SETTINGS = {
         max_model_len=4096,
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.llava_image_vllm_to_hf_output,
+        marks=[
+            pytest.mark.distributed_2_gpus,
+            pytest.mark.skipif(
+                cuda_device_count_stateless() < 2,
+                reason="Need at least 2 GPUs to run the test.",
+            )
+        ],
         **COMMON_BROADCAST_SETTINGS # type: ignore
     ),
     "broadcast-llava_next": VLMTestInfo(
@@ -285,6 +312,13 @@ VLM_TEST_SETTINGS = {
         max_model_len=10240,
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.llava_image_vllm_to_hf_output,
+        marks=[
+            pytest.mark.distributed_2_gpus,
+            pytest.mark.skipif(
+                cuda_device_count_stateless() < 2,
+                reason="Need at least 2 GPUs to run the test.",
+            )
+        ],
         **COMMON_BROADCAST_SETTINGS # type: ignore
     ),
     ### Custom input edge-cases for specific models
@@ -293,7 +327,7 @@ VLM_TEST_SETTINGS = {
         prompt_formatter=lambda img_prompt: f"<|im_start|>User\n{img_prompt}<|im_end|>\n<|im_start|>Assistant\n", # noqa: E501
         test_type=VLMTestType.CUSTOM_INPUTS,
         max_model_len=4096,
-        dtype="bfloat16" if is_cpu() else "half",
+        dtype="bfloat16" if current_platform.is_cpu() else "half",
         use_tokenizer_eos=True,
         patch_hf_runner=model_utils.internvl_patch_hf_runner,
         custom_test_opts=[
