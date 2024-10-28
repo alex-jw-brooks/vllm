@@ -101,8 +101,11 @@ class VLMTestInfo(NamedTuple):
     # Indicates we should explicitly pass the EOS from the tokeniezr
     use_tokenizer_eos: bool = False
     auto_cls: Type[_BaseAutoModelClass] = AutoModelForCausalLM
-    # Callable to pass to the HF runner to run on inputs
-    postprocess_inputs: Callable[[BatchEncoding], BatchEncoding] = identity
+    # Callable to pass to the HF runner to run on inputs; for now, we also pass
+    # the data type to input post processing, because almost all of the uses of
+    # postprocess_inputs are to fix the data types of BatchEncoding values.
+    postprocess_inputs: Callable[[BatchEncoding, str],
+                                 BatchEncoding] = identity
     patch_hf_runner: Optional[Callable[[HfRunner], HfRunner]] = None
 
     # Post processors that if defined, will run oun the outputs of the

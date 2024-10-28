@@ -90,8 +90,7 @@ VLM_TEST_SETTINGS = {
         max_model_len=4096,
         auto_cls=AutoModelForVision2Seq,
         postprocess_inputs=model_utils.get_key_type_post_processor(
-            "pixel_values",
-            "bfloat16"
+            "pixel_values"
         ),
         # For chameleon, we only compare the sequences
         vllm_output_post_proc = lambda vllm_output, model: vllm_output[:2],
@@ -195,8 +194,7 @@ VLM_TEST_SETTINGS = {
         num_video_frames=16,
         max_model_len=4096,
         postprocess_inputs=model_utils.get_key_type_post_processor(
-            "pixel_values_videos",
-            "half"
+            "pixel_values_videos"
         ),
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.llava_onevision_vllm_to_hf_output,
@@ -239,6 +237,9 @@ VLM_TEST_SETTINGS = {
             "cherry_blossom": "What is in the picture?",
         }),
         auto_cls=AutoModelForVision2Seq,
+        postprocess_inputs=model_utils.get_key_type_post_processor(
+            "pixel_values"
+        ),
         vllm_output_post_proc=model_utils.paligemma_vllm_to_hf_output,
         dtype="half" if current_platform.is_rocm() else ("half", "float"),
     ),
@@ -276,7 +277,7 @@ VLM_TEST_SETTINGS = {
         max_model_len=4096,
         auto_cls=AutoModelForVision2Seq,
         postprocess_inputs=model_utils.get_key_type_post_processor(
-            "pixel_values", "half"
+            "pixel_values"
         ),
         vllm_output_post_proc = lambda vllm_output, model: vllm_output[:2],
         hf_output_post_proc = lambda hf_output, model: hf_output[:2],
@@ -347,8 +348,7 @@ VLM_TEST_SETTINGS = {
         max_num_seqs=2,
         dtype="half",
         postprocess_inputs=model_utils.get_key_type_post_processor(
-            "pixel_values",
-            "half"
+            "pixel_values"
         ),
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.llava_onevision_vllm_to_hf_output,

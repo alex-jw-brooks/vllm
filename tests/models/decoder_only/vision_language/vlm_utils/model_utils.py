@@ -174,19 +174,19 @@ def get_llava_embeddings(image_assets: _ImageAssets):
 
 ####### postprocessors to run on HF BatchEncoding
 def get_key_type_post_processor(
-        hf_inp_key: str,
-        dtype: str) -> Callable[[BatchEncoding], BatchEncoding]:
-    """Gets a handle to a post processor which converts a """
-    torch_dtype = STR_DTYPE_TO_TORCH_DTYPE[dtype]
+        hf_inp_key: str) -> Callable[[BatchEncoding, str], BatchEncoding]:
+    """Gets a handle to a post processor which converts a given key into a
+    target data type."""
 
-    def process(hf_inputs: BatchEncoding):
+    def process(hf_inputs: BatchEncoding, dtype: str):
+        torch_dtype = STR_DTYPE_TO_TORCH_DTYPE[dtype]
         hf_inputs[hf_inp_key] = hf_inputs[hf_inp_key].to(torch_dtype)
         return hf_inputs
 
     return process
 
 
-def wrap_inputs_post_processor(hf_inputs: BatchEncoding):
+def wrap_inputs_post_processor(hf_inputs: BatchEncoding, dtype: str):
     return {"model_inputs": hf_inputs}
 
 
