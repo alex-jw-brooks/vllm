@@ -11,6 +11,8 @@ from vllm.sequence import SampleLogprobs
 
 from ....conftest import IMAGE_ASSETS, HfRunner, PromptImageInput, VllmRunner
 from ...utils import check_logprobs_close
+from ....utils import fork_new_process_for_each_test
+
 
 HF_IMAGE_PROMPTS = IMAGE_ASSETS.prompts({
     "stop_sign":
@@ -76,6 +78,10 @@ def run_test(
     Note, the text input is also adjusted to abide by vllm contract.
     The text output is sanitized to be able to compare with hf.
     """
+    # HACK - this is an attempted workaround for the following bug
+    # https://github.com/huggingface/transformers/issues/34307
+    from transformers import AutoProcessor  # noqa: F401
+    from transformers import AutoImageProcessor  # noqa: F401
 
     # NOTE: take care of the order. run vLLM first, and then run HF.
     # vLLM needs a fresh new process without cuda initialization.
@@ -146,6 +152,7 @@ def run_test(
 @pytest.mark.parametrize("dtype", [target_dtype])
 @pytest.mark.parametrize("max_tokens", [128])
 @pytest.mark.parametrize("num_logprobs", [10])
+@fork_new_process_for_each_test
 def test_models(hf_runner, vllm_runner, image_assets, model, size_factors,
                 dtype: str, max_tokens: int, num_logprobs: int) -> None:
     images = [asset.pil_image for asset in image_assets]
@@ -170,6 +177,7 @@ def test_models(hf_runner, vllm_runner, image_assets, model, size_factors,
 
 @pytest.mark.parametrize("model", models)
 @pytest.mark.parametrize("dtype", [target_dtype])
+@fork_new_process_for_each_test
 def test_regression_7840(hf_runner, vllm_runner, image_assets, model,
                          dtype) -> None:
     images = [asset.pil_image for asset in image_assets]
@@ -209,6 +217,7 @@ def test_regression_7840(hf_runner, vllm_runner, image_assets, model,
 @pytest.mark.parametrize("dtype", [target_dtype])
 @pytest.mark.parametrize("max_tokens", [128])
 @pytest.mark.parametrize("num_logprobs", [10])
+@fork_new_process_for_each_test
 def test_multi_images_models(hf_runner, vllm_runner, image_assets, model,
                              size_factors, dtype: str, max_tokens: int,
                              num_logprobs: int) -> None:
