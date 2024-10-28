@@ -10,9 +10,8 @@ from vllm.platforms import current_platform
 from vllm.sequence import SampleLogprobs
 
 from ....conftest import IMAGE_ASSETS, HfRunner, PromptImageInput, VllmRunner
-from ...utils import check_logprobs_close
 from ....utils import fork_new_process_for_each_test
-
+from ...utils import check_logprobs_close
 
 HF_IMAGE_PROMPTS = IMAGE_ASSETS.prompts({
     "stop_sign":
@@ -80,14 +79,13 @@ def run_test(
     """
     # HACK - this is an attempted workaround for the following bug
     # https://github.com/huggingface/transformers/issues/34307
-    from transformers import AutoProcessor  # noqa: F401
     from transformers import AutoImageProcessor  # noqa: F401
+    from transformers import AutoProcessor  # noqa: F401
 
     # NOTE: take care of the order. run vLLM first, and then run HF.
     # vLLM needs a fresh new process without cuda initialization.
     # if we run HF first, the cuda initialization will be done and it
     # will hurt multiprocessing backend with fork method (the default method).
-
     # max_model_len should be greater than image_feature_size
     with vllm_runner(model,
                      task="generate",
