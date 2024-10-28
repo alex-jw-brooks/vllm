@@ -187,12 +187,12 @@ VLM_TEST_SETTINGS = {
         image_sizes=[((1669, 2560), (2560, 1669), (183, 488), (488, 183))],
     ),
     "llava_one_vision": VLMTestInfo(
-        models=["llava-hf/llava-onevision-qwen2-7b-ov-hf"],
-        test_type=VLMTestType.VIDEO,
+        models=["llava-hf/llava-onevision-qwen2-0.5b-ov-hf"],
+        test_type=VLMTestType.CUSTOM_INPUTS,
         prompt_formatter=lambda vid_prompt: f"<|im_start|>user\n{vid_prompt}<|im_end|>\n<|im_start|>assistant\n",   # noqa: E501
         dtype="half",
         num_video_frames=16,
-        max_model_len=4096,
+        max_model_len=16384,
         postprocess_inputs=model_utils.get_key_type_post_processor(
             "pixel_values_videos"
         ),
@@ -201,6 +201,12 @@ VLM_TEST_SETTINGS = {
         # Llava-one-vision tests fixed sizes & the default size factors
         image_sizes=[((1669, 2560), (2560, 1669), (183, 488), (488, 183))],
         runner_mm_key="videos",
+        custom_test_opts=[CustomTestOptions(
+            inputs=custom_inputs.multi_video_multi_aspect_ratio_inputs(
+                formatter=lambda vid_prompt: f"<|im_start|>user\n{vid_prompt}<|im_end|>\n<|im_start|>assistant\n",   # noqa: E501
+            ),
+            limit_mm_per_prompt={"video": 4},
+        )],
         marks=[large_gpu_mark(min_gb=48)],
     ),
     "llava_next_video": VLMTestInfo(
@@ -342,7 +348,7 @@ VLM_TEST_SETTINGS = {
         ],
     ),
     "llava_one_vision-multiple-images": VLMTestInfo(
-        models=["llava-hf/llava-onevision-qwen2-7b-ov-hf"],
+        models=["llava-hf/llava-onevision-qwen2-0.5b-ov-hf"],
         test_type=VLMTestType.CUSTOM_INPUTS,
         max_model_len=16384,
         max_num_seqs=2,

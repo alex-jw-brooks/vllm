@@ -1,9 +1,10 @@
 """Custom input builders for edge-cases in different models."""
 from typing import Callable
 
-from vllm.multimodal.utils import rescale_image_size
+from vllm.multimodal.utils import (rescale_image_size, rescale_video_size,
+                                   resize_video, sample_frames_from_video)
 
-from .....conftest import IMAGE_ASSETS
+from .....conftest import IMAGE_ASSETS, VIDEO_ASSETS
 from .builders import build_multi_image_inputs, build_single_image_inputs
 from .types import ImageSizeWrapper, SizeType
 
@@ -21,7 +22,7 @@ def multi_image_multi_aspect_ratio_inputs(formatter: Callable[[str], str]):
     img_prompts = [
         "<image><image>\nDescribe 2 images.",
         "<image><image>\nDescribe 2 images.",
-        "<image><image><image><image>\nDescribe 4 images.",  # noqa: E501
+        "<image><image><image><image>\nDescribe 4 images.",
         "<image>\nWhat is the season?",
     ]
     formatted_prompts = [formatter(prompt) for prompt in img_prompts]
@@ -42,6 +43,42 @@ def multi_image_multi_aspect_ratio_inputs(formatter: Callable[[str], str]):
                 cherry_blossom.resize((488, 183))
             ],
             cherry_blossom,
+        ])]
+
+
+def multi_video_multi_aspect_ratio_inputs(formatter: Callable[[str], str],
+                                          num_frames: int = 16):
+    """Builds inputs for multi-video (varied sizes/aspect ratio) testing.
+    
+    Args:
+        formatter: model-specific prompt formatter.
+    """
+    video = sample_frames_from_video(VIDEO_ASSETS[0].np_ndarrays, num_frames)
+    # Apply the selected formatter to the base prompts
+    video_prompts = [
+        "<video><video>\nDescribe 2 videos.",
+        "<video><video>\nDescribe 2 videos.",
+        "<video><video><video><video>\nDescribe 4 videos.",
+        "<video>\nWhy is this video funny?",
+    ]
+    formatted_prompts = [formatter(prompt) for prompt in video_prompts]
+
+    return [(
+        formatted_prompts,
+        [
+            [video, video],
+            # Videos with different sizes and aspect-ratios
+            [
+                rescale_video_size(video, 0.1),
+                video,
+            ],
+            [
+                video,
+                rescale_video_size(video, 0.25),
+                resize_video(video, (183, 488)),
+                resize_video(video, (488, 183))
+            ],
+            video,
         ])]
 
 
