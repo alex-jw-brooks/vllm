@@ -198,14 +198,13 @@ VLM_TEST_SETTINGS = {
         ),
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.llava_onevision_vllm_to_hf_output,
-        # Llava-one-vision tests fixed sizes & the default size factors
         image_sizes=[((1669, 2560), (2560, 1669), (183, 488), (488, 183))],
-        runner_mm_key="videos",
         custom_test_opts=[CustomTestOptions(
             inputs=custom_inputs.multi_video_multi_aspect_ratio_inputs(
                 formatter=lambda vid_prompt: f"<|im_start|>user\n{vid_prompt}<|im_end|>\n<|im_start|>assistant\n",   # noqa: E501
             ),
             limit_mm_per_prompt={"video": 4},
+            runner_mm_key="videos",
         )],
     ),
     "llava_next_video": VLMTestInfo(
@@ -218,7 +217,6 @@ VLM_TEST_SETTINGS = {
         vllm_output_post_proc=model_utils.llava_video_vllm_to_hf_output,
         # Llava-next-video tests fixed sizes & the default size factors
         image_sizes=[((1669, 2560), (2560, 1669), (183, 488), (488, 183))],
-        runner_mm_key="videos",
     ),
     "minicpmv": VLMTestInfo(
         models=["openbmb/MiniCPM-Llama3-V-2_5"],
@@ -277,9 +275,14 @@ VLM_TEST_SETTINGS = {
     ),
     "qwen2vl": VLMTestInfo(
         models=["Qwen/Qwen2-VL-7B-Instruct"],
-        test_type=(VLMTestType.IMAGE, VLMTestType.MULTI_IMAGE),
+        test_type=(
+            VLMTestType.IMAGE,
+            VLMTestType.MULTI_IMAGE,
+            VLMTestType.VIDEO
+        ),
         prompt_formatter=lambda img_prompt: f"<|im_start|>User\n{img_prompt}<|im_end|>\n<|im_start|>assistant\n", # noqa: E501
         img_idx_to_prompt=lambda idx: "<|vision_start|><|image_pad|><|vision_end|>", # noqa: E501
+        video_idx_to_prompt=lambda idx: "<|vision_start|><|video_pad|><|vision_end|>", # noqa: E501
         max_model_len=8192,
         auto_cls=AutoModelForVision2Seq,
         vllm_output_post_proc=model_utils.qwen2_vllm_to_hf_output,
