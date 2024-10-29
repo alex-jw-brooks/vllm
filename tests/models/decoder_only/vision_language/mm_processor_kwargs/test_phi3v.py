@@ -12,7 +12,12 @@ from vllm.multimodal import MultiModalRegistry
 from .....conftest import _ImageAssets
 from ....utils import build_model_context
 
-models = ["microsoft/Phi-3.5-vision-instruct"]
+models = [
+    #"microsoft/Phi-3.5-vision-instruct"
+    # The above model is currently not used for this test due to this bug:
+    # https://github.com/huggingface/transformers/issues/34307
+    "microsoft/Phi-3-vision-128k-instruct"
+]
 
 
 # Wrap lazy imports to avoid initializing CUDA during test collection
