@@ -12,7 +12,7 @@ vLLM currently supports the following reasoning models:
 
 - [DeepSeek R1 series](https://huggingface.co/collections/deepseek-ai/deepseek-r1-678e1e131c0169c0bc89728d) (`deepseek_r1`, which looks for `<think> ... </think>`)
 
-- [IBM Granite 3.2 language models](https://huggingface.co/collections/ibm-granite/granite-32-language-models-67b3bc8c13508f6d064cff9a), which look for `Here is my thought process: ... Here is my response: ...`. Note that for granite models, you must also pass `thinking=True` in your `chat_template_kwargs`.
+- [IBM Granite 3.2 language models](https://huggingface.co/collections/ibm-granite/granite-32-language-models-67b3bc8c13508f6d064cff9a), `granite`, which looks for `Here is my thought process: ... Here is my response: ...`. Note that for granite models, you must also pass `thinking=True` in your `chat_template_kwargs`.
 
 ## Quickstart
 
