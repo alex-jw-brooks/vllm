@@ -298,8 +298,9 @@ class AyaVisionForConditionalGeneration(nn.Module, SupportsMultiModal,
         self.multimodal_config = multimodal_config
 
         self.vision_tower = SiglipVisionModel(
-            config.vision_config,
-            quant_config,
+            vllm_config=None,
+            config=config.vision_config,
+            quant_config=quant_config,
             num_hidden_layers_override=num_hidden_layers,
             prefix=maybe_prefix(prefix, "vision_model"))
         self.vocab_size = config.text_config.vocab_size

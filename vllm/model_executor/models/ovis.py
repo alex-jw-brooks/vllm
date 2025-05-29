@@ -116,6 +116,7 @@ class VisualTokenizer(torch.nn.Module):
             )
         elif model_type == "siglip_vision_model":
             return SiglipVisionModel(
+                vllm_config=None,
                 config=config.backbone_config,
                 quant_config=quant_config,
                 prefix=prefix,

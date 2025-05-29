@@ -481,8 +481,9 @@ class Gemma3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP,
         self.sliding_window = getattr(config.text_config,
                                       "interleaved_sliding_window", None)
 
-        self.vision_tower = SiglipVisionModel(config.vision_config,
-                                              quant_config,
+        self.vision_tower = SiglipVisionModel(vllm_config=None,
+                                              config=config.vision_config,
+                                              quant_config=quant_config,
                                               prefix=maybe_prefix(
                                                   prefix, "vision_tower"))
         self.multi_modal_projector = Gemma3MultiModalProjector(config)

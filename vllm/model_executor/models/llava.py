@@ -469,7 +469,8 @@ def init_vision_tower_for_llava(
         )
     elif isinstance(vision_config, SiglipVisionConfig):
         return SiglipVisionModel(
-            vision_config,
+            vllm_config=None,
+            config=vision_config,
             quant_config=quant_config,
             num_hidden_layers_override=num_hidden_layers,
             require_post_norm=require_post_norm,
