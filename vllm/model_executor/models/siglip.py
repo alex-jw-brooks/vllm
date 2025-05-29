@@ -3,25 +3,48 @@
 within a vision language model."""
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Optional, Union
 
 import torch
 from torch import nn
-from transformers import SiglipVisionConfig
+from transformers import BatchFeature, SiglipVisionConfig
 
 from vllm.attention.layer import MultiHeadAttention
+from vllm.config import VllmConfig
 from vllm.distributed import divide, get_tensor_model_parallel_world_size
+from vllm.logger import init_logger
 from vllm.model_executor.layers.activation import get_act_fn
 from vllm.model_executor.layers.linear import (ColumnParallelLinear,
                                                QKVParallelLinear,
                                                RowParallelLinear)
+from vllm.model_executor.layers.pooler import Pooler, PoolingType
 from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
+from vllm.model_executor.pooling_metadata import PoolingMetadata
+from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.multimodal.inputs import (MultiModalDataDict, MultiModalFieldConfig,
+                                    MultiModalKwargs)
+from vllm.multimodal.parse import MultiModalDataItems
+from vllm.multimodal.processing import (BaseMultiModalProcessor,
+                                        BaseProcessingInfo, PromptIndexTargets,
+                                        PromptInsertion, PromptUpdate)
+from vllm.multimodal.profiling import BaseDummyInputsBuilder
+from vllm.sequence import (IntermediateTensors, PoolerOutput,
+                           PoolingSequenceGroupOutput)
 
+from .interfaces import SupportsMultiModal, SupportsV0Only
 from .vision import VisionEncoderInfo, resolve_visual_encoder_outputs
+
+logger = init_logger(__name__)
+
+
+class SiglipProcessingInfo(BaseProcessingInfo):
+
+    def get_supported_mm_limits(self) -> Mapping[str, Optional[int]]:
+        return {"image": None}
 
 
 class SiglipEncoderInfo(VisionEncoderInfo[SiglipVisionConfig]):
@@ -436,20 +459,81 @@ class SiglipVisionTransformer(nn.Module):
             encoder_outputs, feature_sample_layers, self.post_layernorm,
             self.config.num_hidden_layers)
 
-        # TODO: add this back when pooled_output is used in inference.
-        # if self.use_head:
-        # pooled_output = self.head(encoder_outputs)
+        # Apply multi-headed attention pooling if we have a head
+        if self.use_head:
+            encoder_outputs = self.head(encoder_outputs)
 
         return encoder_outputs
 
 
-class SiglipVisionModel(nn.Module):
+class SiglipInputBuilder(BaseDummyInputsBuilder[SiglipProcessingInfo]):
+
+    def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        return ""
+
+    def get_dummy_mm_data(
+        self,
+        seq_len: int,
+        mm_counts: Mapping[str, int],
+    ) -> MultiModalDataDict:
+        # NOTE - currently this is unused since running as a
+        # standalone embedding model is only on v0.
+        num_images = mm_counts.get("image", 0)
+
+        return {
+            "image":
+            self._get_dummy_images(
+                width=224,
+                height=224,
+                num_images=num_images,
+            )
+        }
+
+
+class SiglipMultiModalProcessor(BaseMultiModalProcessor):
+    """Siglip's multimodal processor; note that currently, we only implement
+    vision encoding, so the placeholders for the prompt are unused.
+
+    TODO: Revisit how to support Siglip's text encoder with respect to the
+    encode() API
+    """
+
+    def _get_mm_fields_config(
+        self,
+        hf_inputs: BatchFeature,
+        hf_processor_mm_kwargs: Mapping[str, object],
+    ) -> Mapping[str, MultiModalFieldConfig]:
+        return dict(pixel_values=MultiModalFieldConfig.batched("image"), )
+
+    def _get_prompt_updates(
+        self,
+        mm_items: MultiModalDataItems,
+        hf_processor_mm_kwargs: Mapping[str, object],
+        out_mm_kwargs: MultiModalKwargs,
+    ) -> Sequence[PromptUpdate]:
+        # HACK - currently we need to insert something for the prompt update
+        # to be happy, but we don't actually use the text prompt in this
+        # implementation.
+        return [
+            PromptInsertion(
+                modality="image",
+                target=PromptIndexTargets.start(),
+                insertion=[1],
+            )
+        ]
+
+
+@MULTIMODAL_REGISTRY.register_processor(SiglipMultiModalProcessor,
+                                        info=SiglipProcessingInfo,
+                                        dummy_inputs=SiglipInputBuilder)
+class SiglipVisionModel(nn.Module, SupportsMultiModal, SupportsV0Only):
     config_class = SiglipVisionConfig
     main_input_name = "pixel_values"
 
     def __init__(
         self,
-        config: SiglipVisionConfig,
+        vllm_config: Optional[VllmConfig] = None,
+        config: Optional[SiglipVisionConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         *,
         num_hidden_layers_override: Optional[int] = None,
@@ -457,6 +541,27 @@ class SiglipVisionModel(nn.Module):
         prefix: str = "",
     ) -> None:
         super().__init__()
+        # siglip may be initialized directly, or used as a vision tower in VLMs
+        if vllm_config is not None:
+            if config is not None:
+                logger.warning(
+                    "config & vllm_config both provided to initialize siglip; "
+                    "using config")
+            else:
+                hf_config = vllm_config.model_config.hf_config
+                config = hf_config.vision_config
+
+            # Only have a pooler if we are running the model directly.
+            # Note that this is the vLLM pooler, which is distinct from
+            # the Siglip's MHA pooling head.
+            self._pooler = Pooler.from_config_with_defaults(
+                vllm_config.model_config.pooler_config,
+                pooling_type=PoolingType.ALL,
+                normalize=False,
+                softmax=False)
+        else:
+            # This model is being initialized within a VLM.
+            self._pooler = None
 
         self.vision_model = SiglipVisionTransformer(
             config,
@@ -472,14 +577,35 @@ class SiglipVisionModel(nn.Module):
     def forward(
         self,
         pixel_values: torch.Tensor,
+        input_ids: Optional[torch.Tensor] = None,
+        positions: Optional[torch.Tensor] = None,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
         interpolate_pos_encoding: bool = False,
         feature_sample_layers: Optional[list[int]] = None,
     ) -> torch.Tensor:
+        if pixel_values is None:
+            raise ValueError("Siglip vision model requires pixel_values")
+        if len(pixel_values.shape) == 5:
+            # We may have an extra singleton dimension from batch stacking
+            pixel_values = pixel_values.squeeze(axis=1)
+
         return self.vision_model(
             pixel_values=pixel_values,
             interpolate_pos_encoding=interpolate_pos_encoding,
             feature_sample_layers=feature_sample_layers,
         )
+
+    def pooler(
+        self,
+        hidden_states: torch.Tensor,
+        pooling_metadata: PoolingMetadata,
+    ) -> Optional[PoolerOutput]:
+        # Shouldn't happen since standalone instances
+        # of this class should create the pooler.
+        pooled_outputs = [
+            PoolingSequenceGroupOutput(data) for data in hidden_states
+        ]
+        return PoolerOutput(outputs=pooled_outputs)
 
     def load_weights(self, weights: Iterable[tuple[str,
                                                    torch.Tensor]]) -> set[str]:
@@ -494,6 +620,11 @@ class SiglipVisionModel(nn.Module):
         layer_count = len(self.vision_model.encoder.layers)
 
         for name, loaded_weight in weights:
+            # vLLM currently only implements the vision part of siglip
+            if (name.startswith("text_model")
+                    or name in ["logit_scale", "logit_bias"]):
+                continue
+
             # post_layernorm is optional in SiglipVisionModel
             if (name.startswith("vision_model.post_layernorm")
                     and self.vision_model.post_layernorm is None):
