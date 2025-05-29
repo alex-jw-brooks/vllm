@@ -607,7 +607,14 @@ class ModelConfig:
 
     @property
     def architectures(self) -> list[str]:
-        return getattr(self.hf_config, "architectures", [])
+        architectures = getattr(self.hf_config, "architectures", [])
+        # HACK - siglip2 models that aren't the na-flex variant
+        # do not define the `architectures`; we fall back to SiglipModel
+        # for this case since non na-flex siglip2 shares siglip's original
+        # architecture.
+        if not architectures and self.hf_config.model_type == "siglip":
+            architectures = ["SiglipModel"]
+        return architectures
 
     def maybe_pull_model_tokenizer_for_s3(self, model: str,
                                           tokenizer: str) -> None:
@@ -701,8 +708,7 @@ class ModelConfig:
         return self.registry.is_hybrid_model(self.architectures)
 
     def _init_has_noops(self) -> bool:
-        architectures = getattr(self.hf_config, "architectures", [])
-        return self.registry.is_noops_model(architectures)
+        return self.registry.is_noops_model(self.architectures)
 
     def _init_has_inner_state(self) -> bool:
         return self.registry.model_has_inner_state(self.architectures)

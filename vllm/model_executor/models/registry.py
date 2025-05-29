@@ -159,6 +159,9 @@ _EMBEDDING_MODELS = {
     # input and output. I am adding it here because it piggy-backs on embedding
     # models for the time being.
     "PrithviGeoSpatialMAE": ("prithvi_geospatial_mae", "PrithviGeoSpatialMAE"),
+    # Siglip currently only contains the implementation for the vision tower;
+    # the text model is not loaded.
+    "SiglipModel": ("siglip", "SiglipVisionModel"),
 }
 
 _CROSS_ENCODER_MODELS = {
