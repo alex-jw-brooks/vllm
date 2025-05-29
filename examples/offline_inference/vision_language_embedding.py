@@ -104,6 +104,29 @@ def run_vlm2vec(query: Query) -> ModelRequestData:
     )
 
 
+def run_siglip(query: Query) -> ModelRequestData:
+    if query["modality"] == "image":
+        # FIXME - currently we only support `image` since
+        # we only implement the vision encoder for siglip.
+        prompt = "This prompt is currently unused"  # noqa: E501
+        image = query["image"]
+    else:
+        modality = query['modality']
+        raise ValueError(f"Unsupported query modality: '{modality}'")
+
+    engine_args = EngineArgs(
+        model="google/siglip2-base-patch16-224",
+        task="embed",
+        limit_mm_per_prompt={"image": 1},
+    )
+
+    return ModelRequestData(
+        engine_args=engine_args,
+        prompt=prompt,
+        image=image,
+    )
+
+
 def get_query(modality: QueryModality):
     if modality == "text":
         return TextQuery(modality="text", text="A dog sitting in the grass")
@@ -159,6 +182,7 @@ def run_encode(model: str, modality: QueryModality, seed: Optional[int]):
 model_example_map = {
     "e5_v": run_e5_v,
     "vlm2vec": run_vlm2vec,
+    "siglip": run_siglip,
 }
 
 
@@ -169,7 +193,7 @@ def parse_args():
     parser.add_argument('--model-name',
                         '-m',
                         type=str,
-                        default="vlm2vec",
+                        default="siglip",
                         choices=model_example_map.keys(),
                         help='The name of the embedding model.')
     parser.add_argument('--modality',
