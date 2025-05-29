@@ -106,9 +106,9 @@ def run_vlm2vec(query: Query) -> ModelRequestData:
 
 def run_siglip(query: Query) -> ModelRequestData:
     if query["modality"] == "image":
-        # FIXME - currently we only support `image` since
+        # NOTE - currently we only support `image` since
         # we only implement the vision encoder for siglip.
-        prompt = "This prompt is currently unused"  # noqa: E501
+        prompt = "This prompt is currently unused"
         image = query["image"]
     else:
         modality = query['modality']
@@ -193,7 +193,7 @@ def parse_args():
     parser.add_argument('--model-name',
                         '-m',
                         type=str,
-                        default="siglip",
+                        default="vlm2vec",
                         choices=model_example_map.keys(),
                         help='The name of the embedding model.')
     parser.add_argument('--modality',
