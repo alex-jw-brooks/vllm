@@ -42,8 +42,8 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import (MultiModalDataDict, MultiModalFieldConfig,
                                     MultiModalKwargs)
-from vllm.multimodal.parse import (AudioProcessorItems, MultiModalDataItems,
-                                   MultiModalDataParser)
+from vllm.multimodal.parse import (AudioProcessorItems, AudioEmbeddingItems,
+                                   MultiModalDataItems, MultiModalDataParser)
 from vllm.multimodal.processing import (BaseMultiModalProcessor,
                                         BaseProcessingInfo, PromptReplacement,
                                         PromptUpdate)
@@ -103,6 +103,8 @@ class GraniteSpeechMultiModalProcessor(
         return dict(
             input_features=MultiModalFieldConfig.batched("audio"),
             audio_embed_sizes=MultiModalFieldConfig.batched("audio"),
+            # When raw tensors from the processor are given as passthrough data
+            audio_embeds=MultiModalFieldConfig.batched("audio"),
         )
 
     def _get_prompt_updates(
@@ -121,11 +123,23 @@ class GraniteSpeechMultiModalProcessor(
         audio_token_id = vocab[audio_token]
 
         def get_replacement(item_idx: int):
-            audios = mm_items.get_items("audio", AudioProcessorItems)
+            audios = mm_items.get_items("audio", (AudioEmbeddingItems, AudioProcessorItems))
             audio = audios.get(item_idx)
-            audio_length = audio.shape[-1]
-            num_projector_features = feature_extractor._get_num_audio_features(
-                [audio_length])[0]
+
+            if isinstance(audios, AudioEmbeddingItems):
+                if len(audio.shape) != 2:
+                    # This probably needs to be correctly handled for batch,
+                    # But for that case we also need to make sure we properly
+                    # handle padding etc, which I assume gets configured through
+                    # out_mm_kwargs or something instead of the passthrough data?
+                    raise ValueError("Currently only working with dim 2")
+
+                num_projector_features = int(math.ceil(audio.shape[0] / feature_extractor.projector_window_size) * (feature_extractor.projector_window_size // feature_extractor.projector_downsample_rate))
+
+            else:
+                audio_length = audio.shape[-1]
+                num_projector_features = feature_extractor._get_num_audio_features(
+                    [audio_length])[0]
             return [audio_token_id] * num_projector_features
 
         return [
@@ -546,6 +560,7 @@ class GraniteSpeechForConditionalGeneration(
         quant_config = vllm_config.quant_config
         cache_config = vllm_config.cache_config
 
+        self.model_config = vllm_config.model_config
         self.config = config
         self.quant_config = quant_config
         self.cache_config = cache_config
@@ -580,11 +595,37 @@ class GraniteSpeechForConditionalGeneration(
         self,
         **kwargs: object,
     ) -> Optional[GraniteSpeechAudioInputs]:
+        audio_embeds = kwargs.pop("audio_embeds", None)
         input_features = kwargs.pop("input_features", None)
         input_features_mask = kwargs.pop("input_features_mask", None)
         audio_embed_sizes = kwargs.pop("audio_embed_sizes", None)
-        if input_features is None:
+
+        if input_features is None and audio_embeds is None:
             return None
+
+        # Audio features [processor output] were passed as passthrough data
+        # TODO this is 4D, when the input is 3D; I assume this means it's
+        # [bsz, 1, num_features, 160] due to the same stacking operation
+        # as when we call the HF processor directly from within vLLM,
+        # but we should check to ensure we are not squeezing the wrong
+        # dimension here...
+        if audio_embeds is not None:
+            if len(audio_embeds.shape) == 4:
+                audio_embeds = audio_embeds.squeeze(1)
+            assert len(audio_embeds.shape) == 3
+            # TODO need to figure out the masking / audio embed sizes side of things
+            # This is gross, but here we have the encoder dimension, and we need the
+            # projector dimension...
+            projector_dim = math.ceil(
+                audio_embeds.shape[1] / self.config.window_size
+            ) * (self.config.window_size // self.config.downsample_rate)
+            audio_embed_sizes = torch.Tensor([projector_dim])
+            return GraniteSpeechAudioInputs(
+                # We need to cast the dtype ourselves if it's passed externally
+                input_features=audio_embeds.to(dtype=self.model_config.dtype),
+                input_features_mask=self._build_input_features_mask(audio_embed_sizes),
+                audio_embed_sizes=audio_embed_sizes,
+            )
 
         # If we have a batch of variable feature length audio clips, we need
         # to mask the features; usually we would get an input_features_mask
