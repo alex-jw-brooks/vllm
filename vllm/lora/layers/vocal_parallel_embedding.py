@@ -117,6 +117,12 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
                 self.embeddings_weights[: embeddings.shape[0]].copy_(embeddings)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Short circuit and just run the base layer if both A & B are all zero
+        if (torch.all(self.lora_a_stacked_2d) == 0).cpu().item() and (
+            torch.all(self.lora_b_stacked) == 0
+        ).cpu().item():
+            return self.base_layer.forward(x)
+
         added_tokens_mask = torch.where(x > self.base_layer.org_vocab_size - 1, 1, 0)
 
         # NB: Don't use torch.narrow here. torch.narrow triggers some
