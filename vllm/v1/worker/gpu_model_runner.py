@@ -1549,8 +1549,13 @@ class GPUModelRunner(
                 np.sum(num_sampled_tokens)
                 <= self.vllm_config.scheduler_config.max_num_batched_tokens
             )
+            mm_count_by_req = self.get_lora_mm_token_offset_per_req(scheduler_output)
+
             self.set_active_loras(
-                self.input_batch, num_scheduled_tokens, num_sampled_tokens
+                self.input_batch,
+                num_scheduled_tokens,
+                num_sampled_tokens,
+                mm_count_by_req=mm_count_by_req,
             )
 
         return (
@@ -3356,6 +3361,51 @@ class GPUModelRunner(
         )
         self.kv_connector_output = kv_connector_output
         return None
+
+    def get_lora_mm_token_offset_per_req(self, scheduler_output) -> np.ndarray:
+        """Determine the number of multimodal tokens scheduled
+        per request (i.e., that will be processed by the current model
+        execution).
+
+        This is needed for embedding layers with lora in handling OOV
+        multimodal tokens.
+        """
+        # TODO: (Alex) would be better to reuse this calculation when we mask
+        mm_offsets = np.zeros(self.input_batch.num_reqs, dtype=np.int32)
+
+        for idx, req_id in enumerate(self.input_batch.req_ids):
+            req_state = self.requests[req_id]
+            # Only needed for updating LoRA mappings; ignore non lora requests
+            if not req_state.lora_request:
+                continue
+
+            num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
+            num_computed_tokens = req_state.num_computed_tokens
+
+            for mm_feature in req_state.mm_features:
+                pos_info = mm_feature.mm_position
+                start_pos = pos_info.offset
+                num_encoder_tokens = pos_info.length
+
+                # The encoder output is needed if the two ranges overlap:
+                # [num_computed_tokens,
+                #  num_computed_tokens + num_scheduled_tokens) and
+                # [start_pos, start_pos + num_encoder_tokens)
+                if start_pos >= num_computed_tokens + num_scheduled_tokens:
+                    # The encoder output is not needed in this step.
+                    break
+                if start_pos + num_encoder_tokens <= num_computed_tokens:
+                    # The encoder output is already processed and stored
+                    # in the decoder's KV cache.
+                    continue
+
+                start_idx = max(num_computed_tokens - start_pos, 0)
+                end_idx = min(
+                    num_computed_tokens - start_pos + num_scheduled_tokens,
+                    num_encoder_tokens,
+                )
+                mm_offsets[idx] += end_idx - start_idx
+        return mm_offsets
 
     @torch.inference_mode
     def sample_tokens(

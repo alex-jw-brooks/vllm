@@ -185,6 +185,9 @@ class SupportsMultiModal(Protocol):
     ) -> Tensor:
         if handle_oov_mm_token and is_multimodal is not None:
             is_text = ~is_multimodal
+            # NOTE: We need to be careful about this case in loRA,
+            # since this changes the offsets by indexing the mm
+            # placeholders out of the input IDs
             text_embeds = embed_input_ids(input_ids[is_text])
 
             return torch.empty(

@@ -15,7 +15,9 @@ class LoRAKernelMeta:
     token_indices_sorted_by_lora_ids: torch.Tensor
     active_lora_ids: torch.Tensor
     num_tokens_per_lora: torch.Tensor
+    num_tokens_per_lora_no_mm: torch.Tensor
     lora_token_start_loc: torch.Tensor
+    lora_token_start_loc_no_mm: torch.Tensor
 
     # The V1 architecture uses the traced torch.compile graphs to execute
     # a forward pass. Things to note about this process,
@@ -49,11 +51,17 @@ class LoRAKernelMeta:
         num_tokens_per_lora = torch.zeros(
             max_loras + 1, dtype=torch.int32, device=device
         )
+        num_tokens_per_lora_no_mm = torch.zeros(
+            max_loras + 1, dtype=torch.int32, device=device
+        )
 
         # +2 for this because, the first index is always 0.
         # using running example, lora_token_start_loc
         # is [0, 3, 13, 18, 20].
         lora_token_start_loc = torch.zeros(
+            max_loras + 2, dtype=torch.int32, device=device
+        )
+        lora_token_start_loc_no_mm = torch.zeros(
             max_loras + 2, dtype=torch.int32, device=device
         )
 
@@ -66,15 +74,23 @@ class LoRAKernelMeta:
             num_tokens_per_lora=num_tokens_per_lora,
             lora_token_start_loc=lora_token_start_loc,
             no_lora_flag_cpu=no_lora_flag_cpu,
+            num_tokens_per_lora_no_mm=num_tokens_per_lora_no_mm,
+            lora_token_start_loc_no_mm=lora_token_start_loc_no_mm,
         )
 
     def _reset(self):
         self.active_lora_ids.fill_(-1)
         self.num_tokens_per_lora.fill_(0)
+        self.num_tokens_per_lora_no_mm.fill_(0)
         self.lora_token_start_loc.fill_(0)
+        self.lora_token_start_loc_no_mm.fill_(0)
         self.no_lora_flag_cpu.fill_(False)
 
-    def prepare_tensors(self, token_lora_mapping: torch.Tensor) -> None:
+    def prepare_tensors(
+        self,
+        token_lora_mapping: torch.Tensor,
+        token_lora_indices_no_mm: torch.Tensor | None = None,
+    ) -> None:
         """
         Prepare kernel metadata tensors for the current forward pass.
 
@@ -124,6 +140,24 @@ class LoRAKernelMeta:
             lora_token_start_loc, non_blocking=True
         )
 
+        if token_lora_indices_no_mm is not None:
+            _, num_tokens_per_lora_no_mm = torch.unique(
+                token_lora_indices_no_mm, sorted=True, return_counts=True
+            )
+
+            # Only update non-mm indices if they're provided, since we generally
+            # only need to consider this when encoding potentially out of
+            # vocabulary multimodal tokens,
+            self.num_tokens_per_lora_no_mm[: num_tokens_per_lora_no_mm.size(0)].copy_(
+                num_tokens_per_lora_no_mm, non_blocking=True
+            )
+            lora_token_start_loc_no_mm = torch.cumsum(num_tokens_per_lora_no_mm, dim=0)
+            self.lora_token_start_loc_no_mm[
+                1 : 1 + lora_token_start_loc_no_mm.size(0)
+            ].copy_(  # Then we cumulative sum here...
+                lora_token_start_loc_no_mm, non_blocking=True
+            )
+
     def meta_args(
         self, token_nums: int
     ) -> tuple[
@@ -144,11 +178,23 @@ class LoRAKernelMeta:
             token_nums (int): Number of input tokens in the current forward
                 pass of the kernel.
         """
+        # Either we have no multimodal placeholders, or this is a special case
+        # where we index placeholders out, e.g., embedding OOV placeholders
+        # in prefill
+        # FIXME - this likely is not the right condition to check on, but
+        # we need to handle mixed LoRA/normal batches as well.
+        if bool(token_nums == self.num_tokens_per_lora_no_mm[0]):
+            num_tokens_per_lora = self.num_tokens_per_lora_no_mm
+            lora_token_start_loc = self.lora_token_start_loc_no_mm
+        else:
+            num_tokens_per_lora = self.num_tokens_per_lora
+            lora_token_start_loc = self.lora_token_start_loc
+
         return (
             self.token_lora_mapping[:token_nums],
             self.token_indices_sorted_by_lora_ids[:token_nums],
-            self.num_tokens_per_lora,
-            self.lora_token_start_loc,
+            num_tokens_per_lora,
+            lora_token_start_loc,
             self.active_lora_ids,
             self.no_lora_flag_cpu,
         )

@@ -96,6 +96,10 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # NB: Don't use torch.narrow here. torch.narrow triggers some
         # Dynamic Shape specialization in torch.compile
+        # NOTE: This count generally will NOT include expanded multimodal
+        # placeholders if they are out of vocabulary; we need to be careful to
+        # offset the lora indices when doing the expand op if this is the case.
+        # E case.
         num_tokens = x.shape[0]
         indices_1 = self.punica_wrapper._embeddings_indices[1][:num_tokens]
 

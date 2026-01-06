@@ -138,6 +138,9 @@ class PunicaWrapperBase(PunicaWrapperABC):
         self._token_lora_indices = torch.empty(
             max_num_batched_tokens, dtype=torch.long, device=device
         )
+        self._token_lora_indices_no_mm = torch.empty(
+            max_num_batched_tokens, dtype=torch.long, device=device
+        )
         self._sampler_indices = torch.empty(
             max_num_batched_tokens, dtype=torch.long, device=device
         )
@@ -181,6 +184,7 @@ class PunicaWrapperBase(PunicaWrapperABC):
             sampler_indices,
             sampler_indices_padded,
             embeddings_indices,
+            base_indices_no_mm,
             indices_len,
         ) = convert_mapping(
             mapping,
@@ -198,6 +202,11 @@ class PunicaWrapperBase(PunicaWrapperABC):
         self._embeddings_indices[
             : embeddings_indices.shape[0], : embeddings_indices.shape[1]
         ].copy_(embeddings_indices)
+
+        # Consider the non mm case separately as they dims are different
+        self._token_lora_indices_no_mm[: base_indices_no_mm.shape[0]].copy_(
+            base_indices_no_mm
+        )
 
         self.indices_len[:] = indices_len
 
@@ -254,6 +263,14 @@ class PunicaWrapperBase(PunicaWrapperABC):
         """
         token_lora_len = self.indices_len[0]
         return self._token_lora_indices[:token_lora_len]
+
+    @property
+    def token_lora_indices_no_mm(self) -> torch.Tensor:
+        """
+        This property provides the number of multimodal placeholders
+        """
+        token_lora_len = self.indices_len[-1]
+        return self._token_lora_indices_no_mm[:token_lora_len]
 
     @property
     def sampler_indices(self) -> torch.Tensor:

@@ -259,6 +259,7 @@ class RequestState:
         req_ids: list[str],
         idx_mapping: np.ndarray,
         num_scheduled_tokens: np.ndarray,
+        **kwargs,
     ) -> tuple[tuple[int, ...], tuple[int, ...], set[LoRARequest]]:
         lora_ids = self.lora_ids[idx_mapping]
         prompt_lora_mapping = tuple(lora_ids)
