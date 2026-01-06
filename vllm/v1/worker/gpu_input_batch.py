@@ -892,8 +892,12 @@ class InputBatch:
         return prompt_token_ids_cpu_tensor.to(device=self.device, non_blocking=True)
 
     def make_lora_inputs(
-        self, num_scheduled_tokens: np.ndarray, num_sampled_tokens: np.ndarray
-    ) -> tuple[tuple[int, ...], tuple[int, ...], set[LoRARequest]]:
+        self,
+        num_scheduled_tokens: np.ndarray,
+        num_sampled_tokens: np.ndarray,
+        mm_count_by_req: np.ndarray | None = None,
+        **kwargs,
+    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...], set[LoRARequest]]:
         """
         Given the num_scheduled_tokens for each request in the batch, return
         datastructures used to activate the current LoRAs.
@@ -903,18 +907,29 @@ class InputBatch:
                sampled token.
             2. token_lora_mapping: A tuple of size np.sum(num_scheduled_tokens)
                where, token_lora_mapping[i] is the LoRA id to use for ith token.
-            3. lora_requests: Set of relevant LoRA requests.
+            3. token_lora_mapping_no_mm: A tuple of size np.sum(num_text_tokens),
+               where num_text_tokens is num_scheduled_tokens - mm_count_by_req;
+               this mapping maps token_lora_mapping_no_mm[i] is the LoRA id to
+               use for the ith token assuming we have sliced multimodal
+               placeholders out of the input IDs.
+            4. lora_requests: Set of relevant LoRA requests.
         """
-
         req_lora_mapping = self.request_lora_mapping[: self.num_reqs]
         prompt_lora_mapping = tuple(req_lora_mapping.repeat(num_sampled_tokens))
         token_lora_mapping = tuple(req_lora_mapping.repeat(num_scheduled_tokens))
+        num_text_tokens = num_scheduled_tokens - mm_count_by_req
+        token_lora_mapping_no_mm = tuple(req_lora_mapping.repeat(num_text_tokens))
 
         active_lora_requests: set[LoRARequest] = set(
             self.lora_id_to_lora_request.values()
         )
 
-        return prompt_lora_mapping, token_lora_mapping, active_lora_requests
+        return (
+            prompt_lora_mapping,
+            token_lora_mapping,
+            token_lora_mapping_no_mm,
+            active_lora_requests,
+        )
 
     def set_async_sampled_token_ids(
         self,

@@ -21,12 +21,14 @@ class LoRAMappingType(Enum):
 class LoRAMapping:
     index_mapping: tuple[int, ...]
     prompt_mapping: tuple[int, ...]
+    index_mapping_no_mm: tuple[int, ...]
     is_prefill: bool = False
     type: LoRAMappingType = LoRAMappingType.LANGUAGE
 
     def __post_init__(self):
         self.index_mapping = tuple(self.index_mapping)
         self.prompt_mapping = tuple(self.prompt_mapping)
+        self.index_mapping_no_mm = tuple(self.index_mapping_no_mm)
 
 
 def _get_lora_device(base_layer: nn.Module) -> torch.device:

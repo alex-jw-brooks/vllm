@@ -49,6 +49,7 @@ class LoRAModelRunnerMixin:
         self,
         prompt_lora_mapping: tuple[int, ...],
         token_lora_mapping: tuple[int, ...],
+        token_lora_mapping_no_mm: tuple[int, ...],
         lora_requests: set[LoRARequest],
         mapping_type: LoRAMappingType = LoRAMappingType.LANGUAGE,
     ) -> None:
@@ -61,6 +62,7 @@ class LoRAModelRunnerMixin:
         lora_mapping = LoRAMapping(
             token_lora_mapping,
             prompt_lora_mapping,
+            token_lora_mapping_no_mm,
             is_prefill=True,
             type=mapping_type,
         )
@@ -76,6 +78,7 @@ class LoRAModelRunnerMixin:
         num_scheduled_tokens: np.ndarray,
         num_sampled_tokens: np.ndarray | None = None,
         mapping_type: LoRAMappingType = LoRAMappingType.LANGUAGE,
+        mm_count_by_req: np.ndarray | None = None,
     ) -> None:
         if num_sampled_tokens is None:
             num_sampled_tokens = np.ones_like(num_scheduled_tokens, dtype=np.int32)
@@ -83,11 +86,23 @@ class LoRAModelRunnerMixin:
         prompt_lora_mapping: tuple[int, ...]  # of size np.sum(num_sampled_tokens)
         token_lora_mapping: tuple[int, ...]  # of size np.sum(num_scheduled_tokens)
         lora_requests: set[LoRARequest]
-        prompt_lora_mapping, token_lora_mapping, lora_requests = (
-            input_batch.make_lora_inputs(num_scheduled_tokens, num_sampled_tokens)
+        (
+            prompt_lora_mapping,
+            token_lora_mapping,
+            *token_lora_mapping_no_mm,
+            lora_requests,
+        ) = input_batch.make_lora_inputs(
+            num_scheduled_tokens,
+            num_sampled_tokens,
+            mm_count_by_req=mm_count_by_req,
         )
+        assert len(token_lora_mapping_no_mm) == 1
         return self._set_active_loras(
-            prompt_lora_mapping, token_lora_mapping, lora_requests, mapping_type
+            prompt_lora_mapping,
+            token_lora_mapping,
+            token_lora_mapping_no_mm[0],
+            lora_requests,
+            mapping_type,
         )
 
     @contextmanager
@@ -162,6 +177,11 @@ class LoRAModelRunnerMixin:
             # Make token lora mapping
             token_lora_mapping = np.repeat(prompt_lora_mapping, num_scheduled_tokens)
 
+            # Assume no multimodal placeholders
+            token_lora_no_mm_mapping = np.repeat(
+                prompt_lora_mapping, num_scheduled_tokens
+            )
+
             # Make dummy lora requests
             lora_requests: set[LoRARequest] = {
                 LoRARequest(
@@ -175,6 +195,7 @@ class LoRAModelRunnerMixin:
             self._set_active_loras(
                 tuple(sample_lora_mapping),
                 tuple(token_lora_mapping),
+                tuple(token_lora_no_mm_mapping),
                 lora_requests,
                 mapping_type,
             )

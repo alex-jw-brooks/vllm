@@ -72,7 +72,10 @@ class PunicaWrapperGPU(PunicaWrapperBase):
         self._update_base_metadata(mapping, lora_index_to_id, max_loras, vocab_size)
 
         # Prepare cuda kernel metadata tensors
-        self.token_mapping_meta.prepare_tensors(self.token_lora_indices)
+        self.token_mapping_meta.prepare_tensors(
+            self.token_lora_indices,
+            self.token_lora_indices_no_mm,
+        )
         self.prompt_mapping_meta.prepare_tensors(self.sampler_indices)
 
     def add_shrink(

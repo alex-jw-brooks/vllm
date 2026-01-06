@@ -56,7 +56,9 @@ def convert_mapping(
     vocab_size: int,
     extra_vocab_size: int,
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+) -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[int]
+]:
     """Converts LoRAMapping to index tensors.
 
     Args:
@@ -133,12 +135,19 @@ def convert_mapping(
         0, len(sampler_indices_padded), device=device, dtype=torch.long
     ) + (sampler_indices_padded * len(sampler_indices_padded))
 
+    # Handle token indices with no MM placeholders separately, as this
+    # is expected to not match the number of scheduled tokens if we have
+    # any.
+    index_no_mm_list = list(mapping.index_mapping_no_mm).copy()
+    base_indices_no_mm = torch.tensor(index_no_mm_list, dtype=torch.long, device=device)
+
     # Contain length of indices tensors. Used to index into each tensor.
     indices_len = [
         base_indices.shape[-1],
         sampler_indices.shape[-1],
         sampler_indices_padded.shape[-1],
         embeddings_indices.shape[-1],
+        base_indices_no_mm.shape[-1],
     ]
 
     return (
@@ -146,5 +155,6 @@ def convert_mapping(
         sampler_indices,
         sampler_indices_padded,
         embeddings_indices,
+        base_indices_no_mm,
         indices_len,
     )
