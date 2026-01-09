@@ -159,6 +159,7 @@ class PunicaWrapperGPU(PunicaWrapperBase):
         x: torch.Tensor,
         lora_b_stacked: torch.Tensor,
         add_inputs: bool = True,
+        check_mm_toks: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -172,13 +173,14 @@ class PunicaWrapperGPU(PunicaWrapperBase):
             x (torch.Tensor): Input tensor.
             lora_b_stacked (torch.Tensor): lora_b's weights.
             add_inputs (bool): Default to True.
+            check_mm_toks (bool): Default to False.
         """
 
         lora_expand(
             x.unsqueeze(dim=0),
             (lora_b_stacked,),
             y,
-            *self.token_mapping_meta.meta_args(x.size(0)),
+            *self.token_mapping_meta.meta_args(x.size(0), check_mm_toks=check_mm_toks),
             offset_start=0,
             add_inputs=add_inputs,
         )
