@@ -121,7 +121,11 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
             )
 
         lora_output: torch.Tensor | None = self.punica_wrapper.add_lora_embedding(
-            full_output, full_lora_a_embeddings, self.lora_b_stacked, add_input=True
+            full_output,
+            full_lora_a_embeddings,
+            self.lora_b_stacked,
+            add_input=True,
+            check_mm_toks=True,
         )
 
         if not current_platform.can_update_inplace():

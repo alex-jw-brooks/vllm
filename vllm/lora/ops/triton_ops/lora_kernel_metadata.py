@@ -18,6 +18,8 @@ class LoRAKernelMeta:
     num_tokens_per_lora_no_mm: torch.Tensor
     lora_token_start_loc: torch.Tensor
     lora_token_start_loc_no_mm: torch.Tensor
+    supports_oov_mm: bool
+    mapping_length: int
 
     # The V1 architecture uses the traced torch.compile graphs to execute
     # a forward pass. Things to note about this process,
@@ -76,6 +78,8 @@ class LoRAKernelMeta:
             no_lora_flag_cpu=no_lora_flag_cpu,
             num_tokens_per_lora_no_mm=num_tokens_per_lora_no_mm,
             lora_token_start_loc_no_mm=lora_token_start_loc_no_mm,
+            supports_oov_mm=False,  # Will be set by first call
+            mapping_length=0,
         )
 
     def _reset(self):
@@ -85,6 +89,7 @@ class LoRAKernelMeta:
         self.lora_token_start_loc.fill_(0)
         self.lora_token_start_loc_no_mm.fill_(0)
         self.no_lora_flag_cpu.fill_(False)
+        self.mapping_length = 0
 
     def prepare_tensors(
         self,
@@ -110,6 +115,7 @@ class LoRAKernelMeta:
             return
 
         num_tokens = token_lora_mapping.size(0)
+        self.mapping_length = num_tokens
 
         # copy token lora mapping
         self.token_lora_mapping[:num_tokens].copy_(
@@ -159,7 +165,9 @@ class LoRAKernelMeta:
             )
 
     def meta_args(
-        self, token_nums: int
+        self,
+        token_nums: int,
+        check_mm_toks: bool = False,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -177,18 +185,13 @@ class LoRAKernelMeta:
         Args:
             token_nums (int): Number of input tokens in the current forward
                 pass of the kernel.
+            check_mm_toks (bool): Indicates whether or not the layer
+                may be operating on inputs that squeezed multimodal tokens
+                out to handle the OOV case, e.g., vocab parallel embedding.
         """
-        # Either we have no multimodal placeholders, or this is a special case
-        # where we index placeholders out, e.g., embedding OOV placeholders
-        # in prefill
-        # FIXME - this likely is not the right condition to check on, but
-        # we need to handle mixed LoRA/normal batches as well.
-        if bool(token_nums == self.num_tokens_per_lora_no_mm[0]):
-            num_tokens_per_lora = self.num_tokens_per_lora_no_mm
-            lora_token_start_loc = self.lora_token_start_loc_no_mm
-        else:
-            num_tokens_per_lora = self.num_tokens_per_lora
-            lora_token_start_loc = self.lora_token_start_loc
+        num_tokens_per_lora, lora_token_start_loc = self._resolve_mm_dependent_args(
+            token_nums, check_mm_toks
+        )
 
         return (
             self.token_lora_mapping[:token_nums],
@@ -198,3 +201,18 @@ class LoRAKernelMeta:
             self.active_lora_ids,
             self.no_lora_flag_cpu,
         )
+
+    def _resolve_mm_dependent_args(self, token_nums: int, check_mm_toks: bool):
+        """Based on the number of scheduled tokens, determine if the mapping
+        is using potentially OOV multimodal tokens or not. If we determine
+        OOV multimodal tokens are used.
+        """
+        if check_mm_toks and (
+            self.supports_oov_mm or token_nums != self.mapping_length
+        ):
+            self.supports_oov_mm = True
+            return (
+                self.num_tokens_per_lora_no_mm,
+                self.lora_token_start_loc_no_mm,
+            )
+        return (self.num_tokens_per_lora, self.lora_token_start_loc)
