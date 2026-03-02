@@ -220,5 +220,6 @@ def test_beam_search_passes_multimodal_data(
 
             assert filtered_hf_output_ids == filtered_vllm_output_ids
 
+
 # NOTE: encoder/decoder tests are currently located under
 # tests/models/multimodal/generation/test_whisper.py

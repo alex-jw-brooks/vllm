@@ -100,11 +100,16 @@ def resampled_assets() -> list[tuple[Any, int]]:
             audio = librosa.resample(
                 audio, orig_sr=orig_sr, target_sr=WHISPER_SAMPLE_RATE
             )
-        sampled_assets.append((audio, WHISPER_SAMPLE_RATE),)
+        sampled_assets.append(
+            (audio, WHISPER_SAMPLE_RATE),
+        )
     return sampled_assets
 
+
 @pytest.fixture
-def input_audios(resampled_assets) -> list[tuple[list[str], list[str], list[tuple[Any, int]]]]:
+def input_audios(
+    resampled_assets,
+) -> list[tuple[list[str], list[str], list[tuple[Any, int]]]]:
     inputs = []
     # audio assets are resampled to WHISPER_SAMPLE_RATE
     for audio_info in resampled_assets:
@@ -271,6 +276,8 @@ def test_encoder_cache_cleanup(
 
 MAX_TOKENS = [64]
 MM_BEAM_WIDTHS = [2]
+
+
 @pytest.mark.parametrize("dtype", ["half"])
 @pytest.mark.parametrize("max_tokens", MAX_TOKENS)
 @pytest.mark.parametrize("beam_width", MM_BEAM_WIDTHS)
@@ -307,9 +314,7 @@ def test_beam_search_encoder_decoder(
         # Implicit encoder/decoder prompt
         {
             "prompt": "<|startoftranscript|>",
-            "multi_modal_data": {
-                "audio": resampled_assets[0]
-            },
+            "multi_modal_data": {"audio": resampled_assets[0]},
         },
         # Explicit encoder/decover prompt
         {
