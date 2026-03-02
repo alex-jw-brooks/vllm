@@ -3,7 +3,7 @@
 
 from dataclasses import dataclass
 
-from vllm.inputs import TokenInputs, token_inputs
+from vllm.inputs import EncoderDecoderInputs, TokenInputs, token_inputs
 from vllm.logprobs import Logprob
 from vllm.lora.request import LoRARequest
 from vllm.multimodal.inputs import MultiModalInputs, mm_inputs
@@ -17,9 +17,9 @@ class BeamSearchSequence:
     about to be returned to the user.
     """
 
-    orig_prompt: TokenInputs | MultiModalInputs
+    orig_prompt: TokenInputs | MultiModalInputs | EncoderDecoderInputs
 
-    # The tokens include the prompt.
+    # NOTE: Tokens represents decoder tokens in the encoder / decoder case
     tokens: list[int]
     logprobs: list[dict[int, Logprob]]
     lora_request: LoRARequest | None = None
@@ -31,6 +31,10 @@ class BeamSearchSequence:
     def get_prompt(self):
         prompt = self.orig_prompt
 
+        if prompt["type"] == "enc_dec":
+            return self._build_encoder_decoder_inputs(prompt)
+
+        # Handle decoder-only inputs
         prompt_text = prompt.get("prompt")
         cache_salt = prompt.get("cache_salt")
 
@@ -50,6 +54,36 @@ class BeamSearchSequence:
             cache_salt=cache_salt,
         )
 
+    def _build_encoder_decoder_inputs(self, prompt):
+        """Rebuild the encoder-decoder inputs with the current beam search
+        sequence's tokens.
+        """
+        dec_prompt = prompt["decoder_prompt"]
+
+        # Rebuild decoder prompt with updated tokens,
+        # but keep everything else the same.
+        if dec_prompt["type"] == "multimodal":
+            new_dec_prompt = mm_inputs(
+                self.tokens,
+                mm_kwargs=dec_prompt["mm_kwargs"],
+                mm_hashes=dec_prompt["mm_hashes"],
+                mm_placeholders=dec_prompt["mm_placeholders"],
+                prompt=dec_prompt.get("prompt"),
+                cache_salt=dec_prompt.get("cache_salt"),
+            )
+        else:
+            new_dec_prompt = token_inputs(
+                self.tokens,
+                prompt=dec_prompt.get("prompt"),
+                cache_salt=dec_prompt.get("cache_salt"),
+            )
+
+        return EncoderDecoderInputs(
+            type="enc_dec",
+            encoder_prompt=prompt["encoder_prompt"],
+            decoder_prompt=new_dec_prompt,
+        )
+
 
 @dataclass
 class BeamSearchOutput:
@@ -64,15 +98,20 @@ class BeamSearchOutput:
 class BeamSearchInstance:
     def __init__(
         self,
-        prompt: TokenInputs | MultiModalInputs,
+        prompt: TokenInputs | MultiModalInputs | EncoderDecoderInputs,
         lora_request: LoRARequest | None = None,
         logprobs: list[dict[int, Logprob]] | None = None,
         **kwargs,
     ):
+        decoder_prompt = (
+            prompt if prompt["type"] != "enc_dec" else prompt["decoder_prompt"]
+        )
+        initial_tokens = decoder_prompt["prompt_token_ids"]
+
         self.beams: list[BeamSearchSequence] = [
             BeamSearchSequence(
                 orig_prompt=prompt,
-                tokens=prompt["prompt_token_ids"],
+                tokens=initial_tokens,
                 logprobs=[] if logprobs is None else list(logprobs),
                 lora_request=lora_request,
                 **kwargs,
