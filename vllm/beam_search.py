@@ -57,26 +57,44 @@ class BeamSearchSequence:
     def _build_encoder_decoder_inputs(self, prompt):
         """Rebuild the encoder-decoder inputs with the current beam search
         sequence's tokens.
+
+        NOTE: Because of the way that multimodal encoder/decoder caching is
+        currently implemented, to prevent multimodal feature recomputation at
+        decode time, we drop multimodal components from the decoder prompt.
+        This is currently needed beacuse each beam runs as a new request
+        generating one token, so num_computed_tokens=0, which is the condition
+        for calling the encoder.
+
+        TODO (alex) after caching handles this, update this accordingly.
         """
         dec_prompt = prompt["decoder_prompt"]
 
+        self.orig_prompt: EncoderDecoderInputs
+        num_current_tokens = len(self.tokens)
+        num_initial_tokens = len(self.orig_prompt["decoder_prompt"]["prompt_token_ids"])
+        is_decode = num_current_tokens > num_initial_tokens
+
+        if not is_decode and dec_prompt["type"] == "multimodal":
+            mm_decoder_info = {
+                "mm_kwargs": dec_prompt["mm_kwargs"],
+                "mm_hashes": dec_prompt["mm_hashes"],
+                "mm_placeholders": dec_prompt["mm_placeholders"],
+            }
+        else:
+            mm_decoder_info = {
+                "mm_kwargs": None,
+                "mm_hashes": {},
+                "mm_placeholders": {},
+            }
+
         # Rebuild decoder prompt with updated tokens,
         # but keep everything else the same.
-        if dec_prompt["type"] == "multimodal":
-            new_dec_prompt = mm_inputs(
-                self.tokens,
-                mm_kwargs=dec_prompt["mm_kwargs"],
-                mm_hashes=dec_prompt["mm_hashes"],
-                mm_placeholders=dec_prompt["mm_placeholders"],
-                prompt=dec_prompt.get("prompt"),
-                cache_salt=dec_prompt.get("cache_salt"),
-            )
-        else:
-            new_dec_prompt = token_inputs(
-                self.tokens,
-                prompt=dec_prompt.get("prompt"),
-                cache_salt=dec_prompt.get("cache_salt"),
-            )
+        new_dec_prompt = mm_inputs(
+            self.tokens,
+            prompt=dec_prompt.get("prompt"),
+            cache_salt=dec_prompt.get("cache_salt"),
+            **mm_decoder_info,
+        )
 
         return EncoderDecoderInputs(
             type="enc_dec",
