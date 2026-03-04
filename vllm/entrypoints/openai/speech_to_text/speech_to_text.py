@@ -49,6 +49,7 @@ from vllm.multimodal.audio import split_audio
 from vllm.outputs import RequestOutput
 from vllm.renderers.inputs import DictPrompt, EncoderDecoderDictPrompt
 from vllm.renderers.inputs.preprocess import parse_enc_dec_prompt, parse_model_prompt
+from vllm.sampling_params import BeamSearchParams, SamplingParams
 from vllm.tokenizers import get_tokenizer
 from vllm.utils.import_utils import PlaceholderModule
 
@@ -257,8 +258,6 @@ class OpenAISpeechToText(OpenAIServing):
         via ``get_language_detection_prompt`` and
         ``parse_language_detection_output``.
         """
-        from vllm.sampling_params import SamplingParams
-
         prompt = self.model_cls.get_language_detection_prompt(
             audio_chunk,
             self.asr_config,
@@ -530,10 +529,17 @@ class OpenAISpeechToText(OpenAIServing):
                 self.default_sampling_params,
             )
 
-            sampling_params = request.to_sampling_params(
-                max_tokens,
-                self.default_sampling_params,
-            )
+            sampling_params: SamplingParams | BeamSearchParams
+            if request.use_beam_search:
+                sampling_params = request.to_beam_search_params(
+                    max_tokens, self.default_sampling_params
+                )
+            else:
+                sampling_params = request.to_sampling_params(
+                    max_tokens,
+                    self.default_sampling_params,
+                )
+
             if request.response_format == "verbose_json":
                 sampling_params.logprobs = 1
 
@@ -554,19 +560,29 @@ class OpenAISpeechToText(OpenAIServing):
                     else await self._get_trace_headers(raw_request.headers)
                 )
 
-                generator = self.engine_client.generate(
-                    engine_prompt,
-                    sampling_params,
-                    request_id_item,
-                    lora_request=lora_request,
-                    trace_headers=trace_headers,
-                )
+                if isinstance(sampling_params, BeamSearchParams):
+                    generator = self.beam_search(
+                        prompt=engine_prompt,
+                        params=sampling_params,
+                        request_id=request_id,
+                        lora_request=lora_request,
+                        trace_headers=trace_headers,
+                    )
+                else:
+                    generator = self.engine_client.generate(
+                        engine_prompt,
+                        sampling_params,
+                        request_id_item,
+                        lora_request=lora_request,
+                        trace_headers=trace_headers,
+                    )
 
                 list_result_generator.append(generator)
         except ValueError as e:
             return self.create_error_response(e)
 
-        if request.stream:
+        # We don't allow streaming for beam search
+        if request.stream and not request.use_beam_search:
             return stream_generator_method(
                 request, list_result_generator, request_id, request_metadata, duration_s
             )
