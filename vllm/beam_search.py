@@ -71,9 +71,9 @@ class BeamSearchSequence:
             self.tokens,
             prompt=dec_prompt.get("prompt"),
             cache_salt=dec_prompt.get("cache_salt"),
-            mm_kwargs=dec_prompt["mm_kwargs"],
-            mm_hashes=dec_prompt["mm_hashes"],
-            mm_placeholders=dec_prompt["mm_placeholders"],
+            mm_kwargs=dec_prompt.get("mm_kwargs"),
+            mm_hashes=dec_prompt.get("mm_hashes", {}),
+            mm_placeholders=dec_prompt.get("mm_placeholders", {}),
         )
 
         return EncoderDecoderInputs(

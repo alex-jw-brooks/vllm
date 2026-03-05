@@ -586,7 +586,7 @@ class OpenAISpeechToText(OpenAIServing):
                     generator = self.beam_search(
                         prompt=engine_prompt,
                         params=sampling_params,
-                        request_id=request_id,
+                        request_id=request_id_item,
                         lora_request=lora_request,
                         trace_headers=trace_headers,
                     )
