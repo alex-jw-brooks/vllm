@@ -389,6 +389,22 @@ class OpenAISpeechToText(OpenAIServing):
 
         return prompt
 
+    @staticmethod
+    def _get_decoder_prompt_len(engine_prompts: list[ProcessorInputs]) -> int:
+        """Get the length of the decoder prompt. Currently we need to offset
+        by the decoder prompt length when running beam search because the mm
+        encoder is not currently cached and runs on decode calls; because of
+        this, we need to make sure the redundant encoder calls won't exceed
+        the context :(
+
+        FIXME (Alex) - this will be removed in the very near future once the
+        encoder/decoder caching is implemented.
+        """
+        input_len = 0
+        if engine_prompts and engine_prompts[0].get("type") == "enc_dec":
+            input_len = len(engine_prompts[0]["decoder_prompt"]["prompt_token_ids"])
+        return input_len
+
     def _get_verbose_segments(
         self,
         tokens: tuple,
@@ -518,6 +534,12 @@ class OpenAISpeechToText(OpenAIServing):
         max_model_len = self.model_config.max_model_len
         list_result_generator: list[AsyncGenerator[RequestOutput, None]] | None = None
         try:
+            input_len = (
+                OpenAISpeechToText._get_decoder_prompt_len(engine_prompts)
+                if request.use_beam_search
+                else 0
+            )
+
             # Unlike most decoder-only models, whisper generation length is not
             # constrained by the size of the input audio, which is mapped to a
             # fixed-size log-mel-spectogram. Still, allow for fewer tokens to be
@@ -525,7 +547,7 @@ class OpenAISpeechToText(OpenAIServing):
             max_tokens = get_max_tokens(
                 max_model_len,
                 request.max_completion_tokens,
-                0,
+                input_len,
                 self.default_sampling_params,
             )
 
