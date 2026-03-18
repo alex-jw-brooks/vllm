@@ -4,10 +4,7 @@ import pytest
 import torch
 
 from vllm.multimodal.inputs import MultiModalFeatureSpec, PlaceholderRange
-from vllm.v1.core.encoder_cache_manager import (
-    EncoderCacheManager,
-    EncoderDecoderCacheManager,
-)
+from vllm.v1.core.encoder_cache_manager import EncoderCacheManager
 
 pytestmark = pytest.mark.cpu_test
 
@@ -301,7 +298,8 @@ def test_reset_allows_fresh_allocations():
 
 
 def test_encoder_decoder_cache_manager_reset():
-    manager = EncoderDecoderCacheManager(cache_size=20)
+    """Test that encoder cache manager works for encoder-decoder models."""
+    manager = EncoderCacheManager(cache_size=20)
 
     req1 = MockRequest("req1", ["img1"], [5])
     req2 = MockRequest("req2", ["img2"], [3])
@@ -315,13 +313,14 @@ def test_encoder_decoder_cache_manager_reset():
 
     manager.reset()
 
-    assert len(manager.allocated) == 0
-    assert len(manager.to_free) == 0
+    assert len(manager.cached) == 0
+    assert len(manager.freeable) == 0
     assert manager.num_free_slots == 20
 
 
 def test_encoder_decoder_cache_manager_reset_allows_fresh_allocations():
-    manager = EncoderDecoderCacheManager(cache_size=10)
+    """Test that encoder cache manager allows fresh allocations after reset."""
+    manager = EncoderCacheManager(cache_size=10)
 
     req1 = MockRequest("req1", ["img1"], [10])
     manager.allocate(req1, 0)
@@ -334,4 +333,50 @@ def test_encoder_decoder_cache_manager_reset_allows_fresh_allocations():
     manager.allocate(req2, 0)
 
     assert manager.num_free_slots == 2
-    assert "img2" in manager.allocated
+    assert "img2" in manager.cached
+
+
+def test_encoder_decoder_beam_search_caching():
+    """Test that encoder-decoder models cache encoder outputs across beam search."""
+
+    # Simulate beam search with 4 beams sharing same encoder input
+    cache_size = 100
+    manager = EncoderCacheManager(cache_size=cache_size)
+
+    num_audio_toks = 20
+    num_child_reqs = 3
+    audio_hash = "audio1"
+
+    parent_req = MockRequest("parent", [audio_hash], [num_audio_toks])
+    child_reqs = [
+        MockRequest(f"child{idx}".format(idx), [audio_hash], [num_audio_toks])
+        for idx in range(num_child_reqs)
+    ]
+
+    # Parent beam: cache miss, allocate
+    assert not manager.check_and_update_cache(parent_req, 0)
+    manager.allocate(parent_req, 0)
+    assert audio_hash in manager.cached
+    assert "parent" in manager.cached[audio_hash]
+
+    # Checkl cache hits for child beams
+    for idx, child_req in enumerate(child_reqs):
+        assert audio_hash in manager.cached
+        assert manager.check_and_update_cache(child_req, 0)
+        assert child_req.request_id in manager.cached[audio_hash]
+        assert len(manager.cached[audio_hash]) == (2 + idx)
+
+    # Verify the child requests didn't take up new free slots
+    assert manager.num_free_slots == (cache_size - num_audio_toks)
+
+    # Check that fereing the parent doesn't free the cached data
+    manager.free(parent_req)
+    assert audio_hash in manager.cached
+    assert len(manager.cached[audio_hash]) == num_child_reqs
+
+    # Ensure that once we free all children, it's freeable
+    for child_req in child_reqs:
+        manager.free(child_req)
+
+    assert audio_hash in manager.freeable
+    assert manager.num_freeable_slots == cache_size

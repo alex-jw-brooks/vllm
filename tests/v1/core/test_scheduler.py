@@ -27,6 +27,7 @@ from vllm.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash
 from vllm.v1.core.sched.output import CachedRequestData, SchedulerOutput
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.kv_cache_interface import (
+    CrossAttentionSpec,
     FullAttentionSpec,
     KVCacheConfig,
     KVCacheGroupSpec,
@@ -3798,9 +3799,6 @@ def _create_encoder_decoder_scheduler(
     CrossAttentionSpec (cross-attention) KV cache groups, then patches it
     to behave as an encoder-decoder model.
     """
-    from vllm.v1.core.encoder_cache_manager import EncoderDecoderCacheManager
-    from vllm.v1.kv_cache_interface import CrossAttentionSpec
-
     model_config = ModelConfig(
         model="facebook/opt-125m",
         trust_remote_code=True,
@@ -3865,10 +3863,11 @@ def _create_encoder_decoder_scheduler(
         structured_output_manager=StructuredOutputManager(vllm_config),
     )
 
-    # Patch to enable encoder-decoder behavior in the scheduling loop.
+    # Patch to enable encoder-decoder behavior in the scheduling loop;
+    # Note that encoder-decoder uses the EncoderCacheManager as well.
     scheduler.is_encoder_decoder = True
     scheduler.max_num_encoder_input_tokens = max_num_batched_tokens
-    scheduler.encoder_cache_manager = EncoderDecoderCacheManager(
+    scheduler.encoder_cache_manager = EncoderCacheManager(
         cache_size=max_num_batched_tokens
     )
 

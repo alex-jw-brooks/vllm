@@ -72,17 +72,22 @@ class WhisperModelState(ModelState):
             req_encoder_inputs = scheduled_encoder_inputs.get(req_id, [])
             if req_encoder_inputs:
                 encoder_inputs[req_id] = req_encoder_inputs
-        _, mm_kwargs = self.encoder_runner.prepare_mm_inputs(encoder_inputs)
+
+        mm_hashes, mm_kwargs = self.encoder_runner.prepare_mm_inputs(encoder_inputs)
         if mm_kwargs:
-            # Whisper consumes encoder outputs through `encoder_outputs`, not
-            # `inputs_embeds`. Single modality (audio) so execute_mm_encoder
-            # preserves request order; use its return value directly.
-            # No need to store in encoder_cache: cross-attention K/V are written
-            # to the KV cache on the first step; decode steps use the cache.
-            self.encoder_outputs = self.encoder_runner.execute_mm_encoder(mm_kwargs)
-        else:
-            # Decode steps: encoder K/V are in cross-attention KV cache.
-            self.encoder_outputs = []
+            # Execute the multimodal encoder.
+            encoder_outputs = self.encoder_runner.execute_mm_encoder(mm_kwargs)
+            # Cache the encoder outputs by mm_hash
+            self.encoder_cache.encoder_outputs.update(zip(mm_hashes, encoder_outputs))
+
+        # FIXME - there's probably a better way to do this, but this is a bit of
+        # a hack to rewrite back in request order to handle the beam search case...
+        self.encoder_outputs = []
+        for req_id in input_batch.req_ids:
+            if req_id in self.encoder_cache.mm_features:
+                mm_hash = self.encoder_cache.mm_features[req_id][0].identifier
+                self.encoder_outputs.append(self.encoder_cache.encoder_outputs[mm_hash])
+
         return None
 
     def prepare_inputs(
